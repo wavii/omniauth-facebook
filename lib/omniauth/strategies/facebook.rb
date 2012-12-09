@@ -95,6 +95,23 @@ module OmniAuth
         end
       end
 
+      def callback_phase
+        # You can point your app to use the callback URL when users navigate via
+        # the app center page for it.
+        if request.params['fb_source'] == 'appcenter'
+          # For this case, there's no XSRF check needed
+          prev_ignore_state_flag = options.provider_ignores_state
+          options.provider_ignores_state = true
+        end
+
+        super
+
+      ensure
+        unless prev_ignore_state_flag.nil?
+          options.provider_ignores_state = prev_ignore_state_flag
+        end
+      end
+
       # NOTE if we're using code from the signed request
       # then FB sets the redirect_uri to '' during the authorize
       # phase + it must match during the access_token phase:
@@ -102,6 +119,11 @@ module OmniAuth
       def callback_url
         if @authorization_code_from_signed_request
           ''
+        # Alternatively, if we're coming in via the app center, we need to use
+        # the exact URL as given:
+        # https://developers.facebook.com/docs/guides/appcenter/#authorization
+        elsif request.params['fb_source'] == 'appcenter'
+          request.url
         else
           options[:callback_url] || super
         end

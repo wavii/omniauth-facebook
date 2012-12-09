@@ -2,6 +2,7 @@ require 'helper'
 require 'omniauth-facebook'
 require 'openssl'
 require 'base64'
+require 'socket' # omniauth-oauth2 expects this
 
 class StrategyTest < StrategyTestCase
   include OAuth2StrategyTests
@@ -504,4 +505,45 @@ module BuildAccessTokenTests
       assert_equal 'm4c0d3z', result.token
     end
   end
+end
+
+class AppCenterTests < StrategyTestCase
+
+  def setup
+    super
+
+    @full_url = 'http://site.com/auth/facebook/callback?fb_source=appcenter&fb_appcenter=1&code=APP_CENTER_SIGN_IN_TOKEN&future_arg=abcdef'
+
+    @request.stubs(:url).returns(@full_url)
+    @request.stubs(:params).returns({'fb_source' => 'appcenter', 'fb_appcenter' => '1', 'code' => 'APP_CENTER_SIGN_IN_TOKEN'})
+
+    @access_token = stub('OAuth2::AccessToken')
+    @access_token.stubs(:token).returns('APP_CENTER_AUTH_TOKEN')
+    @access_token.stubs(:options).returns({})
+    @access_token.stubs(:expired?).returns(false)
+  end
+
+  test 'uses the full request URL as the callback_url' do
+    assert_equal strategy.callback_url, @full_url
+  end
+
+  test 'properly requests an access token' do
+    # strategy.client is NOT memoized
+    strategy.client.auth_code.class.any_instance.expects(:get_token).with('APP_CENTER_SIGN_IN_TOKEN', {:redirect_uri => @full_url, :parse => :query}).returns(@access_token)
+    assert_equal 'APP_CENTER_AUTH_TOKEN', strategy.build_access_token.token
+  end
+
+  test 'avoids CSRF protection for appcenter requests' do
+    # strategy.client is NOT memoized
+    strategy.client.auth_code.class.any_instance.expects(:get_token).with('APP_CENTER_SIGN_IN_TOKEN', {:redirect_uri => @full_url, :parse => :query}).returns(@access_token)
+    strategy.expects(:call_app!)
+    strategy.stubs(:auth_hash)
+    strategy.stubs(:env).returns(@request.env)
+
+    strategy.callback_phase
+
+    assert_equal 'APP_CENTER_AUTH_TOKEN', strategy.access_token.token
+    assert_equal false, strategy.options.provider_ignores_state
+  end
+
 end
